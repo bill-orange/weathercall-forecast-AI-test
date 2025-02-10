@@ -12,64 +12,53 @@ TFT_eSPI -> Software License Agreement (MIT License)
  02/06/2025 Added NTP call for local time, added AI one hour forecast and moved graph setup
             Added 1 hour data point 
  02/09/2025 Fork to use weathercall library
+ 02/10/2024 Fork to rely on AI to decode JSON Strings
 */
 
-#include <WiFi.h>       // WiFi for ESP32
-#include <WiFiMulti.h>  // Setup for multiple ssid
-#include <ArduinoJson.h>
-#include <weathercall.h>
+#include <WiFi.h>         // WiFi for ESP32
+#include <WiFiMulti.h>    // Setup for multiple ssid
+#include <ArduinoJson.h>  // Needed for weathercall
+#include <weathercall.h>  // Gets curent weather and forecast from OpenWeather
 #include <ChatGPTuino.h>  // For AI Support
 
-#include <TFT_eSPI.h>       //  Graphic driver for multiple drivers and display
-TFT_eSPI tft = TFT_eSPI();  //  Instance of display driver
+#include <TFT_eSPI.h>       // Graphic driver for multiple drivers and display
+TFT_eSPI tft = TFT_eSPI();  // Instance of display driver
 #include <TFT_eWidget.h>    // Widget library
 
-#include "temperature.h"
 #include "credentials.h"  // Network name, password, and private API key
+
+SET_LOOP_TASK_STACK_SIZE(12 * 1024);  // needed to handle really long strings
 
 #define GFXFF 1                               // No idea what this is.  Taken from library sample
 GraphWidget gr = GraphWidget(&tft);           // Graph widget
 TraceWidget tr1 = TraceWidget(&gr);           // Traces are drawn on tft using graph instance
 #define TIME_Between_Weather_Calls (3600000)  // Every Hour
-#define WIFI_SSID ssid
-#define WIFI_PASSWORD password
+#define WIFI_SSID ssid                        //ssid
+#define WIFI_PASSWORD password                // password
 #define __FILENAME__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
 
-String Key = apiKeyOpenWeather;
-String latitude = LAT;       // 90.0000 to -90.0000 negative for Southern hemisphere
-String longitude = LON;      // 180.000 to -180.000 negative for West
-String units = Units;        // or "imperial"
-String language = Language;  // See notes tab
-String jsonBuffer;
-char *AIShortReply = "                                                  ";
+String Key = apiKeyOpenWeather;                                             // openweathermap free key
+String latitude = LAT;                                                      // 90.0000 to -90.0000 negative for Southern hemisphere
+String longitude = LON;                                                     // 180.000 to -180.000 negative for West
+String units = Units;                                                       // or "imperial"
+String language = Language;                                                 // See notes tab
+char *AIShortReply = "                                                  ";  // get forecast
 
-const int TOKENS = 174;  // How lengthy a response you want, every token is about 3/4 a word
-const int NUM_MESSAGES = 30;
+const int TOKENS = 174;             // How lengthy a response you want, every token is about 3/4 a word
+const int NUM_MESSAGES = 30;        // Set some restrictions on the AI
 const char *model = "gpt-4o-mini";  // OpenAI Model being used
 int indexData = 0;                  // Used fro plotting points on the graph
 
-weatherData w;
-Weathercall weather(Key, "Orange,us");
-Weathercall forecast(Key, "Orange,us", 1);
-
-String timconv(long epoc) {
-  int secondo = epoc % 60;
-  int minus = (epoc / 60);
-  int minuto = minus % 60;
-  int hrus = minus / 60;
-  int horus = hrus % 24;
-  //int dayys = hrus /24;
-  String uptimus = String(horus) + ":" + String(minuto) + ":" + String(secondo);
-  return uptimus;
-}
+weatherData w;                              // Instance of weathercall
+Weathercall weather(Key, "Orange,us");      // Probably should put Orange, US in credentials
+Weathercall forecast(Key, "Orange,us", 1);  // Maybe should use Villa Park since there is an Orange, Florida
 
 WiFiMulti wifiMulti;                       // WiFi multi-connection instance
 ChatGPTuino chat{ TOKENS, NUM_MESSAGES };  // Will store and send your most recent messages (up to NUM_MESSAGES)
-temperatureConverter TC;                   // C to F
-
 
 /*---------------------------- Setup ----------------------------------------*/
 void setup() {
+
   Serial.begin(115200);  // Fast to stop it holding up the stream
   delay(5000);
   Serial.println();  // This block is for debug
@@ -87,30 +76,29 @@ void setup() {
   connectToWifiNetwork();  // Connect to internet
 }
 
-
 float timeData[5] = { 0, 1, 2, 3, 4 };
 float tempData[5] = { 0, 0, 0, 0, 0 };
 
 /*---------------------------- Loop ----------------------------------------*/
 void loop() {
 
-  DrawGraph();
+  DrawGraph();  // Literally draws the graph
 
-  weather.updateStatus(&w);
-  Weatherupdatescreen();
-  forecast.updateStatus(&w);
-  Forecastupdatescreen();
-  AIForecast();
-  tr1.startTrace(TFT_WHITE);
-  tft.setTextDatum(TC_DATUM);
-  for (indexData = 0; indexData <= sizeof(timeData - 1); indexData++) {
+  weather.updateStatus(&w);   // Fetches weather
+  forecast.updateStatus(&w);  // Fetches forecast
+  AIForecast();               // AI fills in blanks in forecast
+
+  tr1.startTrace(TFT_WHITE);                                             // Init line draw
+  tft.setTextDatum(TC_DATUM);                                            //  No idea what this does
+  for (indexData = 0; indexData <= sizeof(timeData - 1); indexData++) {  //Plot all the points
     tr1.addPoint(timeData[indexData], tempData[indexData]);
-    if (indexData < sizeof(timeData - 1)) tft.drawNumber(tempData[indexData], gr.getPointX(timeData[indexData]) + 5, gr.getPointY(tempData[indexData] + 5));
+    if (indexData < sizeof(timeData )) tft.drawNumber(tempData[indexData], gr.getPointX(timeData[indexData]) + 5, gr.getPointY(tempData[indexData] + 5));
   }
-  tft.drawString("Circled Points are A.I. Generated",175,40);
-  tft.drawCircle(gr.getPointX(timeData[indexData - 4]), gr.getPointY(tempData[indexData - 4]), 5, TFT_GREEN);
+  tft.drawString("Circled Points are A.I. Generated", 175, 40);                                                // added legend
+  tft.drawCircle(gr.getPointX(timeData[indexData - 4]), gr.getPointY(tempData[indexData - 4]), 5, TFT_GREEN);  // this and below make the little green circles
   tft.drawCircle(gr.getPointX(timeData[indexData - 3]), gr.getPointY(tempData[indexData - 3]), 5, TFT_GREEN);
   tft.drawCircle(gr.getPointX(timeData[indexData - 2]), gr.getPointY(tempData[indexData - 2]), 5, TFT_GREEN);
+  tft.drawCircle(gr.getPointX(timeData[indexData - 1]), gr.getPointY(tempData[indexData - 1]), 5, TFT_GREEN);
   yield();
   if (tempData[0] != 0 && tempData[1] != 0) delay(TIME_Between_Weather_Calls);  // Recycle on error
 }
@@ -119,36 +107,10 @@ void loop() {
 void AIForecast() {
   // Create the structures that hold the retrieved weather
 
-  String realUserMessage = "I would like you to give me a forecast temperature for 1, 2 and 3 hours in the future. Current conditions are: "
-                           + String(w.weather + ", " + String(w.description))
-                           + ", temperature "
-                           + String(w.current_Temp)
-                           + " C, a humidity of " + String(w.humidity)
-                           + "% , a wind speed of "
-                           + String(w.windspeed * 3.6)
-                           + " MPH, a barometric pressure of " + String(w.pressure)
-                           + " hPa, and a cloud cover of "
-                           + String(w.cloud)
-                           + "%. Conditions at "
-                           + String(w.dt_txt1)
-                           + "3 are estimated to be, description: "
-                           + String(w.weather1) + ", " + String(w.description1)
-                           + ", temperature "
-                           + String(w.current_Temp1)
-                           + "F, a humidity of " + String(w.humidity1)
-                           + "% , a wind speed of "
-                           + String(w.windspeed1 * 3.6)
-                           + " MPH, a barometric pressure of " + String(w.pressure1)
-                           + " hPa and a clouds cover of "
-                           + String(w.cloud1)
-                           + "%. The location is "
-                           + String(w.Location)
-                           + " California. The time of the current weather report is "
-                           + String(timconv(w.dt + w.timezone))
-                           + ". Regardless of missing information, please provide your best 1, 2 and 3 hour forecast temperature."
-                           + "  You may use historical data if you think it will help."
-                           + " Please do not provide narrative or discussion, just the 1,2 and 3 hour forecast temperatures in Fahrenheit"
-                           + " in the format xxx.x xxx.x xxx.x";  // User message to ChatGPT
+  String realUserMessage = "I would like you to give me a forecast temperature for 1, 2, 3 and 4 hours in the future. Do NOT provide narrative or discussion, just the 1, 2, 3 and 4 hour. You response MUST use the format xxx.x xxx.x xxx.x xxx.x and it must not contain anything else Current conditions are provided in this JSON String: "
+                           + String(forecast.getResponse().c_str())
+                           + " Future forecast weather is provided in this JSON String"
+                           + String(weather.getResponse().c_str());  // User message to ChatGPT
 
 
   Serial.println(realUserMessage);
@@ -158,16 +120,17 @@ void AIForecast() {
   AIShortReply = GetAIReply(AIPrompt);
   Serial.println(AIShortReply);
 
-  // ********************************** Record data for Graph
+  // ********************************** Record data for Graph AI refuses to use Fahrenheit
 
-  sscanf(AIShortReply, "%f %f %f", &tempData[1], &tempData[2], &tempData[3]);
-  TC.setCelsius(w.current_Temp);
-  tempData[0] = TC.getFahrenheit();
-  TC.setCelsius(w.current_Temp1);
-  tempData[4] = (TC.getFahrenheit() + (5 * tempData[3])) / 6;
-  Serial.print("w.current_Temp1 ");
-  Serial.println(TC.getFahrenheit());
-  Serial.println(tempData[0]);
+  sscanf(AIShortReply, "%f %f %f %f", &tempData[1], &tempData[2], &tempData[3], &tempData[4]);  // AI told me to use sscanf
+                                                                                                // Conversion
+  tempData[0] = celsiusToFahrenheit(w.current_Temp);
+  tempData[1] = celsiusToFahrenheit(tempData[1]);
+  tempData[2] = celsiusToFahrenheit(tempData[2]);
+  tempData[3] = celsiusToFahrenheit(tempData[3]);
+  tempData[4] = celsiusToFahrenheit(tempData[4]);
+
+  Serial.println(tempData[0]);  // For debug
   Serial.println(tempData[1]);
   Serial.println(tempData[2]);
   Serial.println(tempData[3]);
@@ -215,8 +178,6 @@ void connectToWifiNetwork() {
 char *GetAIReply(char *message) {
   chat.putMessage(message, strlen(message));
   chat.getResponse();
-
-  //Serial.println(message);
   return chat.getLastMessageContent();
 }
 
@@ -231,7 +192,7 @@ void fileInfo() {  // uesful to figure our what software is running
   tft.drawString("    AI openWeather Test ", 5, 30);
   tft.drawString("    Demos AI Prediction", 5, 50);
   tft.setTextSize(1);
-  tft.drawString(__FILENAME__, 0, 90);
+  tft.drawString(__FILENAME__, 10, 90);
   tft.setTextSize(1);
   tft.drawString(__DATE__, 5, 120);
   tft.drawString(__TIME__, 120, 120);
@@ -264,138 +225,9 @@ void DrawGraph() {
     tft.drawNumber(index, gr.getPointX(0) - 7, gr.getPointY(index));
   }
 }
-/*-----------------------------------------------------------------------------------------*/
-
-void Weatherupdatescreen() {
-  /////////////////////variable to screen label
-  Serial.print("Weather and Description: ");
-  Serial.println(w.weather + ": " + w.description);
-  Serial.print("Temperature in °C: ");
-  Serial.println(w.current_Temp);
-  Serial.print("Temperature Min °C: ");
-  Serial.println(w.min_temp);
-  Serial.print("Temperature Max °C: ");
-  Serial.println(w.max_temp);
-  Serial.print("Humidity %: ");
-  Serial.println(w.humidity);
-  Serial.print("Pressure hPa: ");
-  Serial.println(w.pressure);
-  Serial.print("Wind Direction / Speed km/h: ");
-  Serial.println(Wind_NWES_direction(w.windeg) + " " + (w.windspeed * 3.6));
-  Serial.print("Clouds %: ");
-  Serial.println(w.cloud);
-  Serial.print("Rains in mm (or snow): ");
-  Serial.println(w.rain);
-  Serial.print("Location/Country ");
-  Serial.println(w.Location + "," + w.Country);
-  Serial.print("Sunrise");
-  Serial.println(timconv(w.sunrise + w.timezone));
-  Serial.print("Sunset");
-  Serial.println(timconv(w.sunset + w.timezone));
-  Serial.print("last updated: ");
-  Serial.println(timconv(w.dt + w.timezone));
-  Serial.print("Full Response1: ");
-  Serial.println(weather.getResponse().c_str());
-}
-/*-----------------------------------------------------------------------------------------*/
-
-void Forecastupdatescreen() {
-
-  Serial.print("Time Date: ");
-  Serial.println(w.dt_txt1);
-  Serial.print("Weather and Description 1: ");
-  Serial.println(w.weather1 + ": " + w.description1);
-  Serial.print("Temperature in °C 1: ");
-  Serial.println(w.current_Temp1);
-  Serial.print("Temperature Min °C 1: ");
-  Serial.println(w.min_temp1);
-  Serial.print("Temperature Max °C 1: ");
-  Serial.println(w.max_temp1);
-  Serial.print("Humidity % 1: ");
-  Serial.println(w.humidity1);
-  Serial.print("Pressure hPa 1: ");
-  Serial.println(w.pressure1);
-  Serial.print("Wind Direction / Speed km/h 1: ");
-  Serial.println(Wind_NWES_direction(w.windeg1) + " " + (w.windspeed1 * 3.6));
-  Serial.print("Clouds % 1: ");
-  Serial.println(w.cloud1);
-  Serial.print("Rains in mm (or snow) 1: ");
-  Serial.println(w.rain1);
-
-  Serial.println();
-  Serial.print("Time Date: ");
-  Serial.println(w.dt_txt2);
-  Serial.print("Weather and Description 2: ");
-  Serial.println(w.weather2 + ": " + w.description2);
-  Serial.print("Temperature in °C 2: ");
-  Serial.println(w.current_Temp2);
-  Serial.print("Temperature Min °C 2: ");
-  Serial.println(w.min_temp2);
-  Serial.print("Temperature Max °C 2: ");
-  Serial.println(w.max_temp2);
-  Serial.print("Humidity % 2: ");
-  Serial.println(w.humidity2);
-  Serial.print("Pressure hPa 2: ");
-  Serial.println(w.pressure2);
-  Serial.print("Wind Direction / Speed km/h 2: ");
-  Serial.println(Wind_NWES_direction(w.windeg2) + " " + (w.windspeed2 * 3.6));
-  Serial.print("Clouds % 2: ");
-  Serial.println(w.cloud2);
-  Serial.print("Rains in mm (or snow) 2: ");
-  Serial.println(w.rain2);
-
-  Serial.print("Full Response1: ");
-  Serial.println(forecast.getResponse().c_str());
-}
-/*-----------------------------------------------------------------------------------------*/
-
-String Wind_NWES_direction(int windegree) {
-  /////////////////////Wind degree to NSEW value
-  String direction;
-  switch (windegree) {
-
-    case 337 ... 359:
-      direction = "N";
-      break;
-
-    case 0 ... 23:
-      direction = "N";
-      break;
-
-    case 24 ... 68:
-      direction = "NE";
-      break;
-
-    case 69 ... 113:
-      direction = "E";
-      break;
-
-    case 114 ... 158:
-      direction = "SE";
-      break;
-
-    case 159 ... 203:
-      direction = "S";
-      break;
-
-    case 204 ... 248:
-      direction = "SW";
-      break;
-
-    case 249 ... 293:
-      direction = "W";
-      break;
-
-    case 294 ... 336:
-      direction = "NW";
-      break;
-
-    default:
-      // if nothing else matches, do the default
-      // default is optional
-      direction = "?";
-      break;
-  }
-  return direction;
+/*----------------------------------- Conversion --------------------------------------*/
+float celsiusToFahrenheit(float celsius) {
+  return (celsius * 9.0 / 5.0) + 32.0;
 }
 
+/*------------------------------------------------------------------------------------*/
