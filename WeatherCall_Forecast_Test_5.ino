@@ -1,5 +1,5 @@
 /* 
-William E. Webb (c) Test program for using AI with weather forecasting
+William E. Webb (c) MIT LICENSE Test program for using AI with weather forecasting
 Arduino_JSON & ChatGPTuino ->  GNU LESSER GENERAL PUBLIC LICENSE Version 2.1, February 1999
 weathrcall -> Software License Agreement (MIT License)
               Copyright (c) 2019 Dushyant 
@@ -13,6 +13,7 @@ TFT_eSPI -> Software License Agreement (MIT License)
             Added 1 hour data point 
  02/09/2025 Fork to use weathercall library
  02/10/2024 Fork to rely on AI to decode JSON Strings
+ 02/18/2025 Added MIT License
 */
 
 #include <WiFi.h>         // WiFi for ESP32
