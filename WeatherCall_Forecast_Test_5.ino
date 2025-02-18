@@ -10,7 +10,7 @@ TFT_eSPI -> Software License Agreement (MIT License)
  02/04/2025 Intial Release grahics are not intergrated
  02/05/2025 Graphics integrated and tested
  02/06/2025 Added NTP call for local time, added AI one hour forecast and moved graph setup
-            Added 1 hour data point 
+            Added 1 hour data point NTP Call later redacted.
  02/09/2025 Fork to use weathercall library
  02/10/2024 Fork to rely on AI to decode JSON Strings
  02/18/2025 Added MIT License
