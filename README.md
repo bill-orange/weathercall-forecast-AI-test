@@ -6,7 +6,7 @@ Here is a link to the 3D printed case. https://www.thingiverse.com/thing:6953794
 
 ![IMG_1577](https://github.com/user-attachments/assets/b96f4b74-9d93-4a9d-a341-9bf10d177ebd)
 
-As always, there is room for improvement.  Here are some possibe changes:
+As always, there is room for improvement. That's why test is in the name. Here are some possibe changes:
     
     Make text banner in the display move from top to bottom depending on where the graph is (easy).
     
